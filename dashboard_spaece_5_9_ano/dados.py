@@ -61,7 +61,7 @@ st.sidebar.write("""
 """)
 
 # Título principal e subtítulo
-st.title("📊 Dashboard de Análise de Desempenho Escolar -SPAECE (2012 - 2023)")
+st.title("📊 Dashboard de Análise de Desempenho por Escola e Municipío / SPAECE (2012 - 2023)")
 st.subheader("Selecione os filtros abaixo para visualizar os dados")
 
 # Divisão em colunas para os seletores
@@ -104,6 +104,10 @@ else:
     # Gráfico para Matemática
     if not matematica_data.empty:
         st.write("#### Matemática")
+
+        # Ordenar dados por EDICAO
+        matematica_data = matematica_data.sort_values(by='EDICAO')
+
         fig_mat, ax_mat = plt.subplots(figsize=(8, 4))
         sns.barplot(data=matematica_data, x='EDICAO', y='PROFICIENCIA_MEDIA', ax=ax_mat)
         ax_mat.set_ylabel('Proficiência Média')
@@ -112,7 +116,7 @@ else:
         
         # Adicionar rótulos acima das barras
         for p in ax_mat.patches:
-            ax_mat.annotate(f'{p.get_height():.2f}', (p.get_x() + p.get_width() / 2., p.get_height()),
+            ax_mat.annotate(f'{p.get_height():.0f}', (p.get_x() + p.get_width() / 2., p.get_height()),
                             ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
                             textcoords='offset points')
         
@@ -136,6 +140,10 @@ else:
     # Gráfico para Língua Portuguesa
     if not portugues_data.empty:
         st.write("#### Língua Portuguesa")
+
+        # Ordenar dados por EDICAO
+        portugues_data = portugues_data.sort_values(by='EDICAO')
+
         fig_port, ax_port = plt.subplots(figsize=(8, 4))
         sns.barplot(data=portugues_data, x='EDICAO', y='PROFICIENCIA_MEDIA', ax=ax_port)
         ax_port.set_ylabel('Proficiência Média')
@@ -144,7 +152,7 @@ else:
         
         # Adicionar rótulos acima das barras
         for p in ax_port.patches:
-            ax_port.annotate(f'{p.get_height():.2f}', (p.get_x() + p.get_width() / 2., p.get_height()),
+            ax_port.annotate(f'{p.get_height():.0f}', (p.get_x() + p.get_width() / 2., p.get_height()),
                              ha='center', va='center', fontsize=10, color='black', xytext=(0, 5),
                              textcoords='offset points')
         
@@ -265,6 +273,9 @@ def processar_tabela(tabela, componente):
         
         # Converter PROFICIENCIA_MEDIA para números inteiros
         tabela['PROFICIENCIA_MEDIA'] = tabela['PROFICIENCIA_MEDIA'].astype(int)
+
+        # Ordenar tabela por EDICAO
+        tabela = tabela.sort_values(by='EDICAO')  # Adicione essa linha
         
         # Calcular variação percentual e diferença de proficiência
         tabela['Variação Percentual'] = tabela['PROFICIENCIA_MEDIA'].pct_change() * 100
@@ -303,7 +314,7 @@ def processar_tabela(tabela, componente):
             return "color: black;"
         
         # Selecionar e estilizar as colunas desejadas
-        styled_table = tabela[['EDICAO', 'PERÍODO', 'PROFICIENCIA_MEDIA', 'Diferença de Proficiência', 'Variação Percentual']].style.applymap(
+        styled_table = tabela[['ESCOLA','EDICAO', 'PERÍODO', 'PROFICIENCIA_MEDIA', 'Diferença de Proficiência', 'Variação Percentual']].style.applymap(
             colorir_variacao, subset=['Diferença de Proficiência', 'Variação Percentual']  # Aplica cores apenas nessas colunas
         )
         
@@ -341,4 +352,5 @@ st.markdown(
 
 # Rodapé com copyright
 st.markdown("---")
-st.markdown("© 2024 - Todos os direitos reservados. Desenvolvido por Setor de Processamento e Monitoramento de Resultados - SPMR/DAM.")
+st.markdown(f""" <p style='font-size: 14px; text-align: center'> © 2024 - Todos os direitos reservados. <b>Desenvolvido por Setor de Processamento e Monitoramento de Resultados - SPMR/DAM.</b> </p> """, unsafe_allow_html=True
+)
