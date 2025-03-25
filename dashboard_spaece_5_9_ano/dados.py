@@ -1,10 +1,13 @@
 import streamlit as st
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
 import os
 from fpdf import FPDF
+from PIL import Image
+import tempfile
 
 # Configuração do layout para aumentar a largura do conteúdo
 st.set_page_config(layout="wide")
@@ -66,7 +69,7 @@ st.title("📊 Dashboard de Análise de Desempenho por Escola e Municipío / SPA
 st.subheader("Selecione os filtros abaixo para visualizar os dados")
 
 # Criar abas
-tab1, tab2, tab3 = st.tabs(["Dashboard", "Classificação por Edição", "Classificação da Escola"])
+tab1, tab2, tab3, tab4 = st.tabs(["Dashboard", "Classificação por Edição", "Classificação da Escola", "Quartil"])
 
 with tab1:
     # Divisão em colunas para os seletores
@@ -550,6 +553,409 @@ with tab3:
             file_name=f"classificacao_escola_{escola_selecionada}_{etapa_escola}_{componente_escola}.csv",
             mime="text/csv"
         )
+
+
+with tab4:
+    st.header("📊 Análise por Quartis de Proficiência")
+    
+    # Contêiner para os seletores
+    with st.container():
+        col1, col2 = st.columns(2)
+        with col1:
+            filtro_escola = st.selectbox("Filtrar por:", ['Todas as Escolas', 'Escola Específica'], key="filtro_escola")
+            etapa_quartil = st.selectbox("Selecione a ETAPA", ['2º Ano', '5º Ano', '9º Ano'], key="etapa_quartil")
+        
+        with col2:
+            if filtro_escola == 'Escola Específica':
+                # Carrega escolas conforme etapa selecionada
+                if etapa_quartil == '2º Ano':
+                    escolas_options = result_alfa[result_alfa['ETAPA'] == '2º Ano']['ESCOLA'].unique()
+                else:
+                    escolas_options = result_spaece[result_spaece['ETAPA'] == etapa_quartil]['ESCOLA'].unique()
+                
+                escola_selecionada = st.selectbox("Selecione a ESCOLA", sorted(escolas_options), key="escola_quartil")
+            else:
+                # Filtra edições disponíveis conforme a etapa
+                if etapa_quartil == '2º Ano':
+                    edicoes_disponiveis = sorted(result_alfa['EDICAO'].unique())
+                else:
+                    edicoes_disponiveis = sorted(result_spaece[result_spaece['ETAPA'] == etapa_quartil]['EDICAO'].unique())
+                
+                edicao_quartil = st.selectbox("Selecione a EDIÇÃO", edicoes_disponiveis, key="edicao_quartil")
+            
+            componente_quartil = st.selectbox("Selecione o COMPONENTE", 
+                                            ['MATEMÁTICA', 'LÍNGUA PORTUGUESA'], 
+                                            key="componente_quartil")
+
+    # Processamento dos dados
+    if filtro_escola == 'Escola Específica':
+        try:
+            if etapa_quartil == '2º Ano':
+                df_escola = result_alfa[
+                    (result_alfa['ESCOLA'] == escola_selecionada) & 
+                    (result_alfa['ETAPA'] == '2º Ano') &
+                    (result_alfa['COMPONENTE_CURRICULAR'] == componente_quartil)
+                ].copy()
+            else:
+                df_escola = result_spaece[
+                    (result_spaece['ESCOLA'] == escola_selecionada) & 
+                    (result_spaece['ETAPA'] == etapa_quartil) &
+                    (result_spaece['COMPONENTE_CURRICULAR'] == componente_quartil)
+                ].copy()
+            
+            if df_escola.empty:
+                st.warning(f"Nenhum dado encontrado para a escola {escola_selecionada} na etapa {etapa_quartil}")
+            else:
+                # Processa cada edição para classificar nos quartis
+                resultados = []
+                for edicao in df_escola['EDICAO'].unique():
+                    # Filtra dados da edição específica
+                    if etapa_quartil == '2º Ano':
+                        df_edicao = result_alfa[
+                            (result_alfa['EDICAO'] == edicao) &
+                            (result_alfa['ETAPA'] == '2º Ano') &
+                            (result_alfa['COMPONENTE_CURRICULAR'] == componente_quartil)
+                        ].copy()
+                    else:
+                        df_edicao = result_spaece[
+                            (result_spaece['EDICAO'] == edicao) &
+                            (result_spaece['ETAPA'] == etapa_quartil) &
+                            (result_spaece['COMPONENTE_CURRICULAR'] == componente_quartil)
+                        ].copy()
+                    
+                    if not df_edicao.empty:
+                        # Garante que a proficiência é numérica
+                        df_edicao['PROFICIENCIA_MEDIA'] = pd.to_numeric(df_edicao['PROFICIENCIA_MEDIA'], errors='coerce')
+                        df_edicao = df_edicao.dropna(subset=['PROFICIENCIA_MEDIA'])
+                        
+                        if not df_edicao.empty:
+                            q1, q2, q3 = df_edicao['PROFICIENCIA_MEDIA'].quantile([0.25, 0.5, 0.75])
+                            prof_escola = float(df_escola[df_escola['EDICAO'] == edicao]['PROFICIENCIA_MEDIA'].values[0])
+                            
+                            # Classifica o quartil
+                            if prof_escola <= q1:
+                                quartil = "Q1 (25% piores)"
+                            elif prof_escola <= q2:
+                                quartil = "Q2 (25% básicas)"
+                            elif prof_escola <= q3:
+                                quartil = "Q3 (25% intermediárias)"
+                            else:
+                                quartil = "Q4 (25% melhores)"
+                            
+                            resultados.append({
+                                'ESCOLA': escola_selecionada,
+                                'EDIÇÃO': edicao,
+                                'PROFICIÊNCIA': prof_escola,
+                                'QUARTIL': quartil,
+                                'Q1': q1,
+                                'MEDIANA (Q2)': q2,
+                                'Q3': q3
+                            })
+                
+                if resultados:
+                    df_resultado = pd.DataFrame(resultados).sort_values('EDIÇÃO')
+                    
+                    # Exibe tabela com estilo
+                    def color_quartil(val):
+                        color = 'red' if 'Q1' in val else 'orange' if 'Q2' in val else 'lightgreen' if 'Q3' in val else 'darkgreen'
+                        return f'color: {color}; font-weight: bold'
+                    
+                    st.dataframe(
+                        df_resultado.style.format({
+                            'PROFICIÊNCIA': '{:.1f}',
+                            'Q1': '{:.1f}',
+                            'MEDIANA (Q2)': '{:.1f}',
+                            'Q3': '{:.1f}'
+                        }).applymap(color_quartil, subset=['QUARTIL']),
+                        use_container_width=True
+                    )
+                    
+                    # Gera gráfico de evolução
+                    fig, ax = plt.subplots(figsize=(12, 6))
+                    
+                    # Plot principal com rótulos
+                    line = ax.plot(df_resultado['EDIÇÃO'], df_resultado['PROFICIÊNCIA'], 
+                                 'b-o', linewidth=2, markersize=8, label=f'Escola: {escola_selecionada}')
+                    
+                    # Adiciona rótulos de proficiência
+                    for idx, row in df_resultado.iterrows():
+                        ax.annotate(f"{row['PROFICIÊNCIA']:.1f}", 
+                                   (row['EDIÇÃO'], row['PROFICIÊNCIA']),
+                                   textcoords="offset points", xytext=(0,10), 
+                                   ha='center', fontsize=9, color='blue')
+                    
+                    # Áreas dos quartis
+                    ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['Q1'], df_resultado['MEDIANA (Q2)'], 
+                                   color='red', alpha=0.1, label='Q1 (25% piores)')
+                    ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['MEDIANA (Q2)'], df_resultado['Q3'], 
+                                   color='orange', alpha=0.1, label='Q2 (25% básicas)')
+                    ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['Q3'], df_resultado['PROFICIÊNCIA'].max()*1.05, 
+                                   color='green', alpha=0.1, label='Q3/Q4 (25% intermediárias/melhores)')
+                    
+                    # Configurações do gráfico
+                    ax.set_title(f"Evolução da Proficiência\n{escola_selecionada} - {componente_quartil} - {etapa_quartil}", pad=20)
+                    ax.set_xlabel("Edição")
+                    ax.set_ylabel("Proficiência Média")
+                    ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+                    ax.grid(True, linestyle='--', alpha=0.3)
+                    plt.xticks(rotation=45)
+                    plt.tight_layout()
+                    
+                    st.pyplot(fig)
+                    
+                    # Botões de download
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.download_button(
+                            "Download CSV",
+                            df_resultado.to_csv(index=False),
+                            f"quartis_escola_{escola_selecionada}.csv"
+                        )
+                    with col2:
+                        buf = io.BytesIO()
+                        fig.savefig(buf, format='png', dpi=300)
+                        st.download_button(
+                            "Download Gráfico",
+                            buf.getvalue(),
+                            f"evolucao_{escola_selecionada}.png"
+                        )
+                else:
+                    st.warning("Nenhum dado disponível para análise")
+        
+        except Exception as e:
+            st.error(f"Erro ao processar dados: {str(e)}")
+
+    else:
+        # Modo Todas as Escolas
+        try:
+            # Seleciona a base correta com filtro rigoroso por etapa
+            if etapa_quartil == '2º Ano':
+                df_quartil = result_alfa[
+                    (result_alfa['EDICAO'] == edicao_quartil) &
+                    (result_alfa['ETAPA'] == '2º Ano') &
+                    (result_alfa['COMPONENTE_CURRICULAR'] == componente_quartil)
+                ].copy()
+            else:
+                df_quartil = result_spaece[
+                    (result_spaece['EDICAO'] == edicao_quartil) &
+                    (result_spaece['ETAPA'] == etapa_quartil) &
+                    (result_spaece['COMPONENTE_CURRICULAR'] == componente_quartil)
+                ].copy()
+            
+            # Garante que a proficiência é numérica
+            df_quartil['PROFICIENCIA_MEDIA'] = pd.to_numeric(df_quartil['PROFICIENCIA_MEDIA'], errors='coerce')
+            df_quartil = df_quartil.dropna(subset=['PROFICIENCIA_MEDIA'])
+            
+            if df_quartil.empty:
+                st.warning(f"Nenhum dado encontrado para {etapa_quartil} na edição {edicao_quartil}")
+            else:
+                # Calcula quartis
+                q1, q2, q3 = df_quartil['PROFICIENCIA_MEDIA'].quantile([0.25, 0.5, 0.75])
+                
+                # Classifica as escolas
+                def classificar_quartil(proficiencia):
+                    if proficiencia <= q1:
+                        return "Q1 (25% piores)"
+                    elif proficiencia <= q2:
+                        return "Q2 (25% básicas)"
+                    elif proficiencia <= q3:
+                        return "Q3 (25% intermediárias)"
+                    else:
+                        return "Q4 (25% melhores)"
+                
+                df_quartil['QUARTIL'] = df_quartil['PROFICIENCIA_MEDIA'].apply(classificar_quartil)
+                
+                # Função para colorir as células da tabela
+                def colorir_quartil(val):
+                    if 'Q1' in val: color = '#ffcccc'
+                    elif 'Q2' in val: color = '#ffe6cc'
+                    elif 'Q3' in val: color = '#e6f7e6'
+                    else: color = '#ccf2ff'
+                    return f'background-color: {color}; font-weight: bold'
+                
+                # Exibe tabela com escolas
+                st.write("### Classificação por Quartis")
+                st.dataframe(
+                    df_quartil[['ESCOLA', 'ETAPA', 'COMPONENTE_CURRICULAR', 'EDICAO', 'PROFICIENCIA_MEDIA', 'QUARTIL']]
+                    .sort_values('PROFICIENCIA_MEDIA', ascending=False)
+                    .style.applymap(colorir_quartil, subset=['QUARTIL'])
+                    .format({'PROFICIENCIA_MEDIA': '{:.1f}'}),
+                    use_container_width=True,
+                    height=400
+                )
+                
+                # Botão para gerar PDF
+                if st.button("📄 Gerar PDF da Classificação"):
+                    def gerar_pdf_classificacao(df, componente, etapa, edicao):
+                        pdf = FPDF(orientation='P', unit='mm', format='A4')
+                        pdf.add_page()
+                        
+                        # Logo (ajuste o caminho conforme necessário)
+                        logo_path = 'dashboard_spaece_5_9_ano/img/logo_2021.png'
+                        if os.path.exists(logo_path):
+                            pdf.image(logo_path, x=10, y=8, w=30)
+                        
+                        # Título e subtítulo
+                        pdf.set_font('Arial', 'B', 16)
+                        pdf.cell(0, 20, "Classificação por Quartis de Proficiência", ln=True, align='C')
+                        pdf.set_font('Arial', 'B', 12)
+                        pdf.cell(0, 10, f"Componente: {componente} | Etapa: {etapa} | Edição: {edicao}", ln=True, align='C')
+                        pdf.ln(10)
+                        
+                        # Configuração da tabela
+                        pdf.set_font('Arial', 'B', 10)
+                        
+                        # Cabeçalho da tabela (fundo azul e texto branco)
+                        pdf.set_fill_color(0, 51, 102)
+                        pdf.set_text_color(255, 255, 255)
+                        
+                        # Larguras das colunas
+                        col_widths = [15, 60, 20, 25, 30]
+                        
+                        # Cabeçalhos
+                        headers = ["Pos.", "Escola", "Etapa", "Proficiência", "Quartil"]
+                        for i, header in enumerate(headers):
+                            pdf.cell(col_widths[i], 10, header, 1, 0, 'C', fill=True)
+                        pdf.ln()
+                        
+                        # Conteúdo da tabela
+                        pdf.set_font('Arial', '', 8)
+                        pdf.set_text_color(0, 0, 0)
+                        
+                        # Ordena o DataFrame
+                        df_sorted = df.sort_values('PROFICIENCIA_MEDIA', ascending=False)
+                        df_sorted['POSICAO'] = range(1, len(df_sorted) + 1)
+                        
+                        # Cores para os quartis
+                        quartil_colors = {
+                            "Q1 (25% piores)": (255, 204, 204),
+                            "Q2 (25% básicas)": (255, 229, 204),
+                            "Q3 (25% intermediárias)": (204, 255, 204),
+                            "Q4 (25% melhores)": (204, 255, 255)
+                        }
+                        
+                        for _, row in df_sorted.iterrows():
+                            # Posição
+                            pdf.cell(col_widths[0], 10, str(row['POSICAO']), 1, 0, 'C')
+                            
+                            # Escola (com quebra de linha)
+                            pdf.multi_cell(col_widths[1], 10, row['ESCOLA'], 1, 'L')
+                            pdf.set_xy(pdf.get_x() + col_widths[0] + col_widths[1], pdf.get_y() - 10)
+                            
+                            # Etapa
+                            pdf.cell(col_widths[2], 10, row['ETAPA'], 1, 0, 'C')
+                            
+                            # Proficiência
+                            pdf.cell(col_widths[3], 10, f"{row['PROFICIENCIA_MEDIA']:.1f}", 1, 0, 'C')
+                            
+                            # Quartil (com cor de fundo)
+                            quartil = row['QUARTIL']
+                            color = quartil_colors.get(quartil, (255, 255, 255))
+                            pdf.set_fill_color(*color)
+                            pdf.cell(col_widths[4], 10, quartil.split(' ')[0], 1, 1, 'C', fill=True)
+                            pdf.set_fill_color(255, 255, 255)
+                        
+                        # Salva em arquivo temporário
+                        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+                        pdf_path = temp_file.name
+                        pdf.output(pdf_path)
+                        temp_file.close()
+                        return pdf_path
+                    
+                    with st.spinner("Gerando PDF..."):
+                        try:
+                            pdf_path = gerar_pdf_classificacao(
+                                df_quartil,
+                                componente_quartil,
+                                etapa_quartil,
+                                edicao_quartil
+                            )
+                            
+                            with open(pdf_path, "rb") as f:
+                                pdf_bytes = f.read()
+                            
+                            st.download_button(
+                                label="⬇️ Download PDF",
+                                data=pdf_bytes,
+                                file_name=f"classificacao_quartis_{componente_quartil}_{etapa_quartil}_{edicao_quartil}.pdf",
+                                mime="application/pdf"
+                            )
+                            
+                            os.unlink(pdf_path)
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao gerar PDF: {str(e)}")
+                
+                # Tabela de referência
+                st.write("### Valores de Referência dos Quartis")
+                df_ref = pd.DataFrame({
+                    'Quartil': ['Q1 (25% piores)', 'Q2 (25% básicas)', 'Q3 (25% intermediárias)', 'Q4 (25% melhores)'],
+                    'Intervalo': [f"≤ {q1:.1f}", f"{q1:.1f} - {q2:.1f}", f"{q2:.1f} - {q3:.1f}", f"> {q3:.1f}"],
+                    'Nº de Escolas': [
+                        (df_quartil['QUARTIL'] == "Q1 (25% piores)").sum(),
+                        (df_quartil['QUARTIL'] == "Q2 (25% básicas)").sum(),
+                        (df_quartil['QUARTIL'] == "Q3 (25% intermediárias)").sum(),
+                        (df_quartil['QUARTIL'] == "Q4 (25% melhores)").sum()
+                    ]
+                })
+                st.dataframe(df_ref, use_container_width=True)
+                
+                # Boxplot com melhorias
+                st.write("### Distribuição por Quartis")
+                fig, ax = plt.subplots(figsize=(12, 6))
+                
+                # Estilo do boxplot
+                boxprops = dict(linestyle='-', linewidth=1.5)
+                whiskerprops = dict(linestyle='--')
+                medianprops = dict(linestyle='-', linewidth=2.5, color='yellow')
+                
+                # Cria o boxplot
+                sns.boxplot(data=df_quartil, x='QUARTIL', y='PROFICIENCIA_MEDIA', 
+                           order=["Q1 (25% piores)", "Q2 (25% básicas)", "Q3 (25% intermediárias)", "Q4 (25% melhores)"], 
+                           palette=['#ff9999', '#ffcc99', '#99cc99', '#99ccff'],
+                           boxprops=boxprops, whiskerprops=whiskerprops, medianprops=medianprops)
+                
+                # Linhas de referência
+                ax.axhline(y=q1, color='red', linestyle=':', alpha=0.7, label=f'Q1: {q1:.1f}')
+                ax.axhline(y=q2, color='orange', linestyle=':', alpha=0.7, label=f'Mediana (Q2): {q2:.1f}')
+                ax.axhline(y=q3, color='green', linestyle=':', alpha=0.7, label=f'Q3: {q3:.1f}')
+                
+                # Rótulos das medianas
+                for i, quartil in enumerate(["Q1 (25% piores)", "Q2 (25% básicas)", "Q3 (25% intermediárias)", "Q4 (25% melhores)"]):
+                    q_data = df_quartil[df_quartil['QUARTIL'] == quartil]['PROFICIENCIA_MEDIA']
+                    median = q_data.median()
+                    ax.text(i, median, f'{median:.1f}', ha='center', va='center', 
+                           fontweight='bold', color='black', bbox=dict(facecolor='white', alpha=0.8))
+                
+                # Configurações do gráfico
+                ax.set_title(f"Distribuição por Quartis\n{componente_quartil} - {etapa_quartil} (Edição {edicao_quartil})", pad=20)
+                ax.set_xlabel("Quartil")
+                ax.set_ylabel("Proficiência Média")
+                ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+                ax.grid(True, linestyle='--', alpha=0.3)
+                plt.tight_layout()
+                
+                st.pyplot(fig)
+                
+                # Botões de download
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.download_button(
+                        "Download CSV",
+                        df_quartil[['ESCOLA', 'ETAPA', 'COMPONENTE_CURRICULAR', 'PROFICIENCIA_MEDIA', 'QUARTIL']].to_csv(index=False),
+                        f"quartis_{componente_quartil}_{etapa_quartil}_{edicao_quartil}.csv"
+                    )
+                with col2:
+                    buf = io.BytesIO()
+                    fig.savefig(buf, format='png', dpi=300)
+                    st.download_button(
+                        "Download Gráfico",
+                        buf.getvalue(),
+                        f"boxplot_quartis_{componente_quartil}_{etapa_quartil}_{edicao_quartil}.png"
+                    )
+        
+        except Exception as e:
+            st.error(f"Erro ao processar dados: {str(e)}")
             
     # Adicionar referência com link clicável
         st.markdown(
