@@ -65,7 +65,7 @@ st.sidebar.write("""
 """)
 
 # Título principal e subtítulo
-st.title("📊 Dashboard de Análise de Desempenho por Escola e Municipío / SPAECE (2012 - 2023)")
+st.title("📊 Dashboard de Análise de Desempenho por Escola e Municipío / SPAECE (2007 - 2024)")
 st.subheader("Selecione os filtros abaixo para visualizar os dados")
 
 # Criar abas
@@ -634,13 +634,13 @@ with tab4:
                             
                             # Classifica o quartil
                             if prof_escola <= q1:
-                                quartil = "Q1 (25% piores)"
+                                quartil = "Q1 (25% baixo)"
                             elif prof_escola <= q2:
-                                quartil = "Q2 (25% básicas)"
+                                quartil = "Q2 (25% médio baixo)"
                             elif prof_escola <= q3:
-                                quartil = "Q3 (25% intermediárias)"
+                                quartil = "Q3 (25% médio alto)"
                             else:
-                                quartil = "Q4 (25% melhores)"
+                                quartil = "Q4 (25% alto)"
                             
                             resultados.append({
                                 'ESCOLA': escola_selecionada,
@@ -686,11 +686,11 @@ with tab4:
                     
                     # Áreas dos quartis
                     ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['Q1'], df_resultado['MEDIANA (Q2)'], 
-                                   color='red', alpha=0.1, label='Q1 (25% piores)')
+                                   color='red', alpha=0.1, label='Q1 (25% baixa)')
                     ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['MEDIANA (Q2)'], df_resultado['Q3'], 
-                                   color='orange', alpha=0.1, label='Q2 (25% básicas)')
+                                   color='orange', alpha=0.1, label='Q2 (25% média baixa)')
                     ax.fill_between(df_resultado['EDIÇÃO'], df_resultado['Q3'], df_resultado['PROFICIÊNCIA'].max()*1.05, 
-                                   color='green', alpha=0.1, label='Q3/Q4 (25% intermediárias/melhores)')
+                                   color='green', alpha=0.1, label='Q3/Q4 (25% médio alto/alto)')
                     
                     # Configurações do gráfico
                     ax.set_title(f"Evolução da Proficiência\n{escola_selecionada} - {componente_quartil} - {etapa_quartil}", pad=20)
@@ -755,13 +755,13 @@ with tab4:
                 # Classifica as escolas
                 def classificar_quartil(proficiencia):
                     if proficiencia <= q1:
-                        return "Q1 (25% piores)"
+                        return "Q1 (25% baixa)"
                     elif proficiencia <= q2:
-                        return "Q2 (25% básicas)"
+                        return "Q2 (25% média baixa)"
                     elif proficiencia <= q3:
-                        return "Q3 (25% intermediárias)"
+                        return "Q3 (25% média alta)"
                     else:
-                        return "Q4 (25% melhores)"
+                        return "Q4 (25% alta)"
                 
                 df_quartil['QUARTIL'] = df_quartil['PROFICIENCIA_MEDIA'].apply(classificar_quartil)
                 
